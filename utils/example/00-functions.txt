@@ -1,0 +1,128 @@
+#!/bin/bash
+
+
+
+
+
+
+function env_report {
+  DATE=$( date | awk '{gsub(":","_"); gsub(" ","-"); print}' )
+  env > env-${DATE}.txt
+}
+
+
+function errcho {
+  echo ${@} 1>&2
+}
+
+
+function pause {  
+  MAX_JOBS=${1}
+  NJOBS=${2}
+  if [ $NJOBS -ge ${MAX_JOBS} ]; then echo true ; else echo false ; fi
+}
+
+function pause_job_launches {
+    if [ -z $MAX_SIMULTANEOUS_JOBS ]; then MAX_SIMULTANEOUS_JOBS=2 ; fi
+    if [ -z $SLEEP_WAIT_TIME ]; then SLEEP_WAIT_TIME=10 ; fi
+    N=$( jobs | wc -l )
+    while $( pause ${MAX_SIMULTANEOUS_JOBS} ${N} ) ; do 
+      ## debug: errcho $MAX_SIMULTANEOUS_JOBS $SLEEP_WAIT_TIME $N
+      sleep ${SLEEP_WAIT_TIME} ; 
+      N=$( jobs | wc -l )
+      jobs > /dev/null ## For some reason, calling "jobs" is necessary inside this function. It wasn't when I just had a while loop written in each individual function: 
+    done ## Only keep MAX_SIMULTANEOUS_JOBS jobs at most going at a time
+}
+
+
+
+######################################################################
+#######     GENOME COVERAGE FUNCTIONS       ##########################
+######################################################################
+
+function genome_frag_cov {
+  ## Appropriate for paired-end reads
+  ##	- dont treat reads independently
+  ##	- get coverage across whole fragment defined by pair ---
+  ##	- ...may also want to make a genome_frag_split_cov function...
+  ## Assumes in env: G, BDGDIR
+  ## Assumes 1 or more subdirs has BAM files
+  ## Assumes BDGDIR has bedGraph representatives of all BAMs found
+  ## Output is accessed by "bdg2bw_all_subdirs"
+  ## EXAMPLE ARGS:
+  ##	genome_cov ${BAMDIR}/*.bam
+  ##	genome_cov ${CLEANBAMDIR}/*.bam
+  ##	genome_cov */*.bam
+  echo "::::  ${0} "
+  OUTDIR=${1}
+  mkdir -p ${OUTDIR}
+  BAMFILES="${@:2}"
+  for BAM in ${BAMFILES} ; do 
+    PRE=$( basename $BAM .bam )
+    bedtools genomecov -bga -pc -g $G -ibam ${BAM} | sortBed -i - > ${OUTDIR}/${PRE}-fragcov.bedGraph &
+    #while $( pause 8 $( jobs | wc -l ) ) ; do sleep 10 ; done ## Only keep 8 jobs at most going at a time
+    pause_job_launches
+  done 
+  wait
+}
+
+function bdg2bw {
+  ## Assumes in env: G
+  ## EXAMPLE ARGS:
+  ##    bdg2bw BWDIR ${BDGDIR}/*.bam
+  ##    bdg2bw OUTDIR ${BDGDIR}/*.bam
+  echo "::::  bdg2bw "
+  OUTDIR=${1}
+  mkdir -p ${OUTDIR}
+  BEDGRAPHS="${@:2}"
+  for BDG in ${BEDGRAPHS} ; do
+    PRE=$( basename $BDG .bedGraph )
+    echo ${PRE}
+    BW=${OUTDIR}/${PRE}.bw
+    bedGraphToBigWig ${BDG} ${G} ${BW} &
+    #while $( pause 8 $( jobs | wc -l ) ) ; do sleep 10 ; done ## Only keep 8 jobs at most going at a time
+    pause_job_launches
+  done 
+  wait
+}
+
+
+
+
+function makewindows {
+  ## G in ENV
+  STEP=${1}
+  WIDTH=${2}
+  bedtools makewindows -g $G -w $WIDTH -s $STEP | awk -v "WIDTH=$WIDTH" '$3-$2 == WIDTH {OFS="\t"; print $1,$2,$3,NR}'
+}
+
+
+function bwAvgBdg {
+  bigWigAverageOverBed ${BW} ${BEDFILE} ${OUTPRE}.tab -stats=${OUTPRE}-stats.ra -bedOut=${OUTPRE}.bed -minMax
+  sortBed -i ${OUTPRE}.bed > ${OUTPRE}.bed.sortedtmp
+  mv ${OUTPRE}.bed.sortedtmp ${OUTPRE}.bed
+  awk 'OFS="\t" {print $1,$2,$3,$5}' ${OUTPRE}.bed | sortBed -i - > ${OUTPRE}-binMeans.bedGraph
+}
+
+function bigWigAverageOverBedLoop {
+  ## Assumes in env: G
+  ## EXAMPLE ARGS:
+  ##    this_fxn BEDFILE OUTDIR ${BWGDIR}/*.bw
+  echo "::::  bigWigAverageOverBedLoop "
+  BEDFILE=${1}
+  OUTDIR=${2}
+  mkdir -p ${OUTDIR}
+  BIGWIGS="${@:3}"
+  for BW in ${BIGWIGS} ; do
+    PRE=$( basename $BW .bw )
+    echo ${PRE}
+    OUTPRE=${OUTDIR}/${PRE}
+    bwAvgBdg &
+    #while $( pause 8 $( jobs | wc -l ) ) ; do sleep 10 ; done ## Only keep 8 jobs at most going at a time
+    pause_job_launches
+  done
+  wait
+}
+
+
+

@@ -7,6 +7,9 @@ import numpy as np
 ## Development of this script was originally in 2017-2018.
 ## Formerly known as gc_median.py
 
+##	VERSION 0.1
+
+
 ## CAN DELETE
 ##import rpy2.robjects as robjects
 ##ksmooth = robjects.r['ksmooth']

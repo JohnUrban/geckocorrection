@@ -4,7 +4,9 @@ from collections import defaultdict
 import numpy as np
 
 
-## Now known as geckcorrection.py
+## Now known as geckcorrection.py -- this version is the same that was used in the "iSNS-seq" paper.
+
+## VERSION 0.0 (( note: VERSION 0.1 is identical except renamed to geckcorrection.py ))
 
 ## CAN DELETE
 ##import rpy2.robjects as robjects
